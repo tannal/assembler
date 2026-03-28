@@ -1,0 +1,16 @@
+[package]
+name = "my_jit_experiment"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cranelift = { version = "0.130.0", default-features = false, features = ["std", "frontend", "jit", "module"] }
+cranelift-native = "0.130.0"
+cranelift-jit = "0.130.0"
+cranelift-module = "0.130.0"
+cranelift-codegen = "0.130.0"
+memmap2 = "0.9"
+cranelift-assembler-x64 = "0.130.0"
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+libc = "0.2"
