@@ -1,16 +1,13 @@
 [package]
-name = "my_jit_experiment"
+name    = "jit_assembler"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-cranelift = { version = "0.130.0", default-features = false, features = ["std", "frontend", "jit", "module"] }
-cranelift-native = "0.130.0"
-cranelift-jit = "0.130.0"
-cranelift-module = "0.130.0"
-cranelift-codegen = "0.130.0"
-memmap2 = "0.9"
-cranelift-assembler-x64 = "0.130.0"
-
+# libc 仅在 Unix 系平台（Linux / macOS）使用
+# Windows 直接通过 #[link(name = "kernel32")] 调用 WinAPI，无需第三方 crate
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 libc = "0.2"
+
+[[bin]]
+name = "demo"
+path = "src/main.rs"
