@@ -235,31 +235,35 @@ impl<B: MacroAssemblerBackend> MacroAssembler<B> {
     }
 
     /// 工业级安全调用包装
-    pub fn safe_call(&mut self, target_reg: VReg, args_count: usize) {
-        // 1. 计算溢出到栈上的参数数量
-        let num_stack_args = if args_count > 4 { args_count - 4 } else { 0 };
-        
-        // 2. 计算需要分配的总空间
-        // Shadow Space (32) + Stack Args (N * 8)
-        let mut total_space = 32 + (num_stack_args * 8);
-        
-        // 3. 动态对齐补丁 (16字节对齐)
-        // 加上返回地址(8)和之前prologue(8)，当前栈已经是16对齐
-        // 所以 total_space 必须是 16 的倍数
-        if total_space % 16 != 0 {
-            total_space += 8; // 补齐到 16 字节
+    pub fn safe_call(&mut self, target: VReg, args_count: usize) {
+        #[cfg(target_os = "windows")]
+        {
+            // 1. 基础空间：32 字节影子空间
+            let mut space = 32;
+
+            // 2. 溢出参数：超过 4 个的部分
+            if args_count > 4 {
+                space += (args_count - 4) * 8;
+            }
+
+            // 3. 对齐补偿核心逻辑：
+            // 进入 JIT: -8 (return addr)
+            // prologue: -8 (push rbp)
+            // 当前栈偏移总计: -16 (已经是 16 的倍数)
+            // 但是！接下来的 `call` 指令又会压入一个 8 字节的返回地址。
+            // 为了让被调用者看到对齐的栈，我们在 call 之前，必须让 RSP 处于 16n + 8 的位置。
+            
+            // 既然当前是 16n (0 结尾)，我们要减去 (32 + 8) = 40。
+            // 这样 0 - 40 = -40，结尾是 8。完美！
+            let alignment_padding = 8;
+            let total_alloc = space + alignment_padding;
+
+            self.backend.add_imm(VReg::StackPtr, -(total_alloc as i32));
+            
+            self.backend.call_reg(target);
+            
+            self.backend.add_imm(VReg::StackPtr, total_alloc as i32);
         }
-    
-        // 4. 执行分配
-        self.backend.add_imm(VReg::StackPtr, -(total_space as i32));
-    
-        // 5. (此处省略) 将超出的参数 mov 到 [rsp + offset] 的逻辑
-    
-        // 6. 真正的调用
-        self.backend.call_reg(target_reg);
-    
-        // 7. 平栈
-        self.backend.add_imm(VReg::StackPtr, total_space as i32);
     }
 
     pub fn push_vreg(&mut self, r: VReg)            { self.backend.push_vreg(r) }

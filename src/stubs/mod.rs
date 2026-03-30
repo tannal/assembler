@@ -13,6 +13,7 @@ pub mod quicksort;
 pub mod bubble_sort;
 pub mod fib;
 pub mod jit_call;
+pub mod jit_call_c;
 
 pub use quicksort::build_quicksort;
 pub use bubble_sort::build_bubblesort;

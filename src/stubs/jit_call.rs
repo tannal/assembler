@@ -18,24 +18,12 @@ fn test_emit_caller_with_sp() {
     m.mov_imm(VReg::Arg(1), 2);
     m.mov_imm(VReg::Arg(2), 3);
 
-    // 2. 准备调用环境 (修正版)
-    #[cfg(target_os = "windows")]
-    {
-        // 影子空间 32 字节 + 8 字节对齐填充 = 40 字节
-        // 这样：(当前 0) - 40 - (call 压栈 8) = 结束位 0 (对齐！)
-        m.sub_imm(VReg::StackPtr, 40); 
-    }
+    // 2. 执行调用
+    let target = VReg::Tmp(0);
+    m.mov_imm(target, callee_addr);
+    
+    m.safe_call(target, 3);
 
-    // 3. 执行调用
-    let tmp = VReg::Tmp(0);
-    m.mov_imm(tmp, callee_addr);
-    m.call_reg(tmp);
-
-    // 4. 清理环境
-    #[cfg(target_os = "windows")]
-    {
-        m.add_imm(VReg::StackPtr, 40);
-    }
 
     m.add_imm(VReg::Ret, 5);
     m.epilogue();
