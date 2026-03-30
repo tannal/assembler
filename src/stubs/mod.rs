@@ -11,9 +11,11 @@ use crate::util::hexdump::hex_disassemble;
 
 pub mod quicksort;
 pub mod bubble_sort;
+pub mod fib;
 
 pub use quicksort::build_quicksort;
 pub use bubble_sort::build_bubblesort;
+pub use fib::build_fibonacci;
 
 // ──────────────────────────────────────────────────────────────
 // 内部胶水：把 emit 闭包编译成 JitFn<F>

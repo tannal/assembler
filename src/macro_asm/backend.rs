@@ -126,6 +126,10 @@ pub trait MacroAssemblerBackend: Sized {
     /// *(base + idx * ptr_size) = src  (存储指针大小的内存字)
     fn store_ptr_scaled(&mut self, base: VReg, idx: VReg, src: VReg);
 
+    fn push(&mut self, reg: VReg);
+
+    fn pop(&mut self, reg: VReg);
+
     // ── 算术 ─────────────────────────────────────────────────
 
     /// dst = lhs + rhs
@@ -201,6 +205,14 @@ impl<B: MacroAssemblerBackend> MacroAssembler<B> {
     pub fn store_ptr_scaled(&mut self, base: VReg, idx: VReg, src: VReg) {
         self.backend.store_ptr_scaled(base, idx, src)
     }
+    pub fn push(&mut self, reg: VReg) {
+        self.backend.push(reg);
+    }
+
+    pub fn pop(&mut self, reg: VReg) {
+        self.backend.pop(reg);
+    }
+    
     pub fn add(&mut self, d: VReg, l: VReg, r: VReg) { self.backend.add(d, l, r) }
     pub fn add_imm(&mut self, d: VReg, imm: i32)    { self.backend.add_imm(d, imm) }
     pub fn sub(&mut self, d: VReg, l: VReg, r: VReg) { self.backend.sub(d, l, r) }

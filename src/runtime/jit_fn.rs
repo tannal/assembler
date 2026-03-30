@@ -2,7 +2,7 @@
 //  src/runtime/jit_fn.rs  —  类型化 JIT 函数句柄
 // ============================================================
 
-use crate::platform::ExecutableBuffer;
+use crate::{arch::Label, platform::ExecutableBuffer};
 
 /// 持有可执行内存 + 类型化函数指针的 RAII 容器。
 ///
@@ -37,6 +37,11 @@ impl<F: Copy> JitFn<F> {
             // 将执行内存的起始地址和长度转为 &[u8]
             std::slice::from_raw_parts(self._buf.as_ptr(), self._buf.len())
         }
+    }
+
+    pub fn get_label_offset(&self, label: &Label) -> usize {
+        // 后端在 bind 时会记录 Label 对应的相对位置
+        label.offset() 
     }
 
     /// 代码大小（字节）

@@ -34,6 +34,7 @@
 
 use crate::macro_asm::{Cond, NativeMasm, VReg::*};
 use crate::runtime::JitFn;
+use crate::util::hexdump::hex_disassemble;
 
 pub fn build_bubblesort() -> JitFn<unsafe extern "C" fn(*mut isize, isize)> {
     let mut m = NativeMasm::new();
@@ -201,4 +202,12 @@ fn test_jit_bubblesort() {
     let elapsed = now.elapsed();
     assert!(is_sorted(&a5));
     println!("  [✓] 1000 items (rev) -> Sorted in {:?}", elapsed);
+}
+
+
+#[test]
+fn visualize_all_stubs() {
+    // 1. sum_array
+    let jit_sum = build_bubblesort();
+    hex_disassemble("bubble_sort", jit_sum.as_bytes());
 }

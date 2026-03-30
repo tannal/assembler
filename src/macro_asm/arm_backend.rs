@@ -194,4 +194,12 @@ impl MacroAssemblerBackend for ArmBackend {
     fn cmp_imm(&mut self, lhs: VReg, imm: i64) {
         todo!()
     }
+    
+    fn push(&mut self, reg: VReg) {
+        todo!()
+    }
+    
+    fn pop(&mut self, reg: VReg) {
+        todo!()
+    }
 }

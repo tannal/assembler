@@ -12,11 +12,24 @@ pub mod x64;
 // ──────────────────────────────────────────────────────────────
 // § 1  Label：跳转目标，支持前向 / 后向引用，自动回填
 // ──────────────────────────────────────────────────────────────
-
-/// 标签句柄，由各 Assembler 内部管理生命周期
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Label {
-    pub id: usize,
+    id: usize,
+    offset: Option<usize>, // 核心：绑定后的字节偏移
+}
+
+impl Label {
+    pub fn new(id: usize) -> Self {
+        Self { id, offset: None }
+    }
+
+    pub fn bind(&mut self, offset: usize) {
+        self.offset = Some(offset);
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset.expect("Label used before being bound!")
+    }
 }
 
 /// Label 的内部状态（每个 Assembler 持有一张表）
@@ -173,7 +186,7 @@ impl LabelTable {
     pub fn new_label(&mut self) -> Label {
         let id = self.0.len();
         self.0.push(LabelState::new());
-        Label { id }
+        Label { id, offset: None }
     }
 
     /// 绑定 label 到 `pos`，返回需要回填的 patch sites

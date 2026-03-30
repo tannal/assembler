@@ -240,4 +240,14 @@ impl MacroAssemblerBackend for X64Backend {
     fn pop_vreg(&mut self, r: VReg) {
         self.asm.pop_r64(self.r(r));
     }
+    
+    fn push(&mut self, reg: VReg) {
+        let reg = self.r(reg);
+        self.asm.pop_r64(reg);
+    }
+    
+    fn pop(&mut self, reg: VReg) {
+        let reg = self.r(reg);
+        self.asm.pop_r64(reg);
+    }
 }
