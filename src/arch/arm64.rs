@@ -308,6 +308,66 @@ impl Arm64Assembler {
     // ── NOP ──────────────────────────────────────────────────
 
     pub fn nop(&mut self) { self.emit_insn(0xD503_201F); }
+
+    // ── 直接代理（让 Backend 不需要 use ArchAssembler）──────────
+    pub fn new_label(&mut self) -> Label { self.labels.new_label() }
+    pub fn bind(&mut self, label: &Label) {
+        let pos = self.buf.len();
+        let sites = self.labels.bind(label, pos);
+        for site in sites {
+            match site.width {
+                PatchWidth::ArmBranch26  => self.patch_b26(site.offset, pos),
+                PatchWidth::Aarch64Imm19 => self.patch_imm19(site.offset, pos),
+                _ => unreachable!(),
+            }
+        }
+    }
+    pub fn ret(&mut self) { self.emit_insn(0xD65F_03C0); }
+
+    // ── 内存写入（store）─────────────────────────────────────
+
+    /// STR Xt, [Xbase, Xidx, LSL #3]   (store 64-bit)
+    pub fn str_reg_base_idx_lsl3(&mut self, src: XReg, base: XReg, idx: XReg) {
+        // STR (register): size=11 V=0 opc=00 Rm option=011 S=1 Rn Rt
+        // 0xF828_6800 | (Rm<<16) | (Rn<<5) | Rt
+        let insn = 0xF828_6800u32
+            | ((idx.0  as u32) << 16)
+            | ((base.0 as u32) << 5)
+            | src.0 as u32;
+        self.emit_insn(insn);
+    }
+
+    // ── 栈操作（pair push/pop）───────────────────────────────
+
+    /// STP Xa, Xb, [sp, #-16]!   (push 任意寄存器对)
+    pub fn stp_pre(&mut self, ra: XReg, rb: XReg) {
+        // STP X (pre-index): opc=10 V=0 L=0 imm7=-1(0x7F) Rt2 Rn=sp Rt
+        // 0xA9BF_0000 | (Rb<<10) | (sp<<5) | Ra
+        let insn = 0xA9BF_0000u32
+            | ((rb.0 as u32) << 10)
+            | (31u32 << 5)   // sp = 31
+            | ra.0 as u32;
+        self.emit_insn(insn);
+    }
+
+    /// LDP Xa, Xb, [sp], #16   (pop 任意寄存器对)
+    pub fn ldp_post(&mut self, ra: XReg, rb: XReg) {
+        // LDP X (post-index): opc=10 V=0 L=1 imm7=+1(0x01) Rt2 Rn=sp Rt
+        // 0xA8C1_0000 | (Rb<<10) | (sp<<5) | Ra
+        let insn = 0xA8C1_0000u32
+            | ((rb.0 as u32) << 10)
+            | (31u32 << 5)
+            | ra.0 as u32;
+        self.emit_insn(insn);
+    }
+
+    // ── 函数调用 ─────────────────────────────────────────────
+
+    /// BL <label>   (Branch with Link，保存 pc+4 → lr)
+    pub fn bl(&mut self, lbl: &Label) {
+        // BL: 0x9400_0000 | imm26
+        self.emit_branch_target(lbl, 0x9400_0000, PatchWidth::ArmBranch26);
+    }
 }
 
 // ──────────────────────────────────────────────────────────────

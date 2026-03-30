@@ -1,29 +1,26 @@
 // ============================================================
-//  src/main.rs  —  跨平台 JIT Assembler 演示
+//  src/main.rs  —  跨平台 JIT Assembler 演示 + 测试
 // ============================================================
 
 use jit_assembler::{
-    arch::{Arch, ArchAssembler},
-    stubs::{build_const_add, build_factorial, build_sum_array, build_const_return},
+    arch::Arch,
+    stubs::{bubble_sort, build_bubblesort, build_const_add, build_factorial, build_quicksort, build_sum_array},
     util::hexdump,
 };
 
-// 只在 x86-64 上展示 hexdump（其他架构同理）
 #[cfg(target_arch = "x86_64")]
-fn inspect_sum_array() {
+fn show_sum_array_bytes() {
+    use jit_assembler::arch::ArchAssembler;
     use jit_assembler::arch::x64::{reg::*, X64Assembler};
     use jit_assembler::runtime::JitRuntime;
-
     let mut asm = X64Assembler::new();
     asm.push_rbp();
     asm.mov_rbp_rsp();
     asm.xor_r64_r64(rax, rax);
-
     #[cfg(target_os = "windows")]
     let (arr, len, idx) = (rcx, rdx, r11);
     #[cfg(not(target_os = "windows"))]
     let (arr, len, idx) = (rdi, rsi, rcx);
-
     asm.xor_r64_r64(idx, idx);
     let ls = asm.new_label();
     let dn = asm.new_label();
@@ -37,20 +34,11 @@ fn inspect_sum_array() {
     asm.bind(&dn);
     asm.pop_rbp();
     asm.ret();
-
-    let bytes = JitRuntime::assemble_bytes(asm);
-    hexdump("sum_array (x86-64)", &bytes);
+    hexdump("sum_array (x86-64 raw)", &JitRuntime::assemble_bytes(asm));
 }
 
-#[cfg(target_arch = "aarch64")]
-fn inspect_sum_array() {
-    // AArch64 上不展示 hexdump，直接运行测试
-}
-
-#[cfg(target_arch = "arm")]
-fn inspect_sum_array() {
-    // ARM 上不展示 hexdump，直接运行测试
-}
+#[cfg(not(target_arch = "x86_64"))]
+fn show_sum_array_bytes() {}
 
 fn main() {
     let arch = Arch::native();
@@ -58,112 +46,185 @@ fn main() {
     println!("  Cross-Platform JIT Assembler  │  arch = {}", arch);
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    // ── 1. 字节检查 ──────────────────────────────────────────
-    inspect_sum_array();
+    show_sum_array_bytes();
 
-    // ── 2. sum_array ─────────────────────────────────────────
-    println!("\n[*] Building sum_array JIT stub …");
+    // ── sum_array ─────────────────────────────────────────────
+    println!("\n[*] sum_array …");
     let jit_sum = build_sum_array();
     println!("    entry: {:p}  size: {} bytes", jit_sum.entry_addr(), jit_sum.code_size());
 
-    // x86-64 / AArch64 版本操作 i64；ARM 32-bit 操作 i32
-    // 用 cfg 选择测试用例类型
+    let cases: Vec<(&str, Vec<i64>)> = vec![
+        ("empty",     vec![]),
+        ("single 42", vec![42]),
+        ("1..=10",    (1..=10).collect()),
+        ("pow2",      vec![1,2,4,8,16,32,64,128]),
+        ("negatives", vec![-5,-3,0,3,5]),
+        ("1..=1000",  (1..=1000).collect()),
+    ];
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    {
-        type Elem = i64;
-        let cases: Vec<(&str, Vec<Elem>)> = vec![
-            ("empty",          vec![]),
-            ("single",         vec![42]),
-            ("1..=10",         (1..=10).collect()),
-            ("powers of 2",    vec![1, 2, 4, 8, 16, 32, 64, 128]),
-            ("negatives",      vec![-5, -3, 0, 3, 5]),
-            ("1..=1000",       (1..=1000).collect()),
-        ];
-
-        println!("\n┌─────────────────────┬───────────────┬───────────────┬───────┐");
-        println!("│ Array               │ JIT result    │ Rust sum      │  OK?  │");
-        println!("├─────────────────────┼───────────────┼───────────────┼───────┤");
-
-        for (name, arr) in &cases {
-            let jit_result = unsafe { (jit_sum.get())(arr.as_ptr(), arr.len() as i64) };
-            let rust_result: Elem = arr.iter().sum();
-            let ok = jit_result == rust_result;
-            println!(
-                "│ {:<19} │ {:>13} │ {:>13} │  {}   │",
-                name, jit_result, rust_result,
-                if ok { "✓" } else { "✗ FAIL" }
-            );
-            assert!(ok, "FAIL: {}", name);
-        }
-        println!("└─────────────────────┴───────────────┴───────────────┴───────┘");
+    println!("\n  ┌─────────────────────┬──────────────┬──────────────┬──────┐");
+    println!("  │ Array               │ JIT          │ Rust         │  OK? │");
+    println!("  ├─────────────────────┼──────────────┼──────────────┼──────┤");
+    for (name, arr) in &cases {
+        let jit_r  = unsafe { (jit_sum.get())(arr.as_ptr(), arr.len() as i64) };
+        let rust_r: i64 = arr.iter().sum();
+        let ok = jit_r == rust_r;
+        println!("  │ {:<19} │ {:>12} │ {:>12} │  {}  │",
+            name, jit_r, rust_r, if ok {"✓"} else {"✗ FAIL"});
+        assert!(ok, "sum_array FAIL: {}", name);
     }
+    println!("  └─────────────────────┴──────────────┴──────────────┴──────┘");
 
-    #[cfg(target_arch = "arm")]
-    {
-        type Elem = i32;
-        let cases: Vec<(&str, Vec<Elem>)> = vec![
-            ("single",  vec![42]),
-            ("1..=10",  (1i32..=10).collect()),
-        ];
-        for (name, arr) in &cases {
-            let jit_result = unsafe { (jit_sum.get())(arr.as_ptr(), arr.len() as i32) };
-            let rust_result: Elem = arr.iter().sum();
-            assert_eq!(jit_result, rust_result, "sum_array FAIL: {}", name);
-            println!("  [✓] sum_array({}) = {}", name, jit_result);
-        }
-    }
-
-    // ── 3. factorial ─────────────────────────────────────────
-    println!("\n[*] Building factorial JIT stub …");
+    // ── factorial ─────────────────────────────────────────────
+    println!("\n[*] factorial …");
     let jit_fact = build_factorial();
-
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    {
-        let cases = [(0i64, 1i64), (1, 1), (5, 120), (10, 3628800), (12, 479001600)];
-        for (n, expected) in cases {
-            let result = unsafe { (jit_fact.get())(n) };
-            assert_eq!(result, expected, "factorial({}) FAIL", n);
-            println!("  [✓] factorial({}) = {}", n, result);
-        }
+    for (n, want) in [(0i64,1i64),(1,1),(5,120),(10,3628800),(12,479001600)] {
+        let r = unsafe { (jit_fact.get())(n) };
+        if r == want { println!("  [✓] {}! = {}", n, r); }
+        else { panic!("  [✗] {}! = {} (expected {})", n, r, want); }
     }
 
-    #[cfg(target_arch = "arm")]
-    {
-        let cases = [(0i32, 1i32), (1, 1), (5, 120), (10, 3628800)];
-        for (n, expected) in cases {
-            let result = unsafe { (jit_fact.get())(n) };
-            assert_eq!(result, expected, "factorial({}) FAIL", n);
-            println!("  [✓] factorial({}) = {}", n, result);
-        }
-    }
-
-    // ── 4. const_add ─────────────────────────────────────────
-    println!("\n[*] Building const_add JIT stub …");
+    // ── const_add ─────────────────────────────────────────────
+    println!("\n[*] const_add …");
     let jit_add = build_const_add();
-
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    {
-        let result = unsafe { (jit_add.get())(10i64) };
-        assert_eq!(result, 20, "const_add FAIL");
-        println!("  [✓] const_add(10) = {}", result);
+    for (x, want) in [(10i64, 20i64), (0, 10)] {
+        let r = unsafe { (jit_add.get())(x) };
+        if r == want { println!("  [✓] const_add({}) = {}", x, r); }
+        else { panic!("  [✗] const_add({}) = {} (expected {})", x, r, want); }
     }
 
-    #[cfg(target_arch = "arm")]
+    // ── quicksort ─────────────────────────────────────────────
+    println!("\n[*] quicksort …");
+    let jit_qs = build_quicksort();
+    println!("    entry: {:p}  size: {} bytes", jit_qs.entry_addr(), jit_qs.code_size());
+
+    let sort = |arr: &mut Vec<isize>| {
+        let n = arr.len() as isize;
+        if n > 1 {
+            unsafe { (jit_qs.get())(arr.as_mut_ptr(), 0, n - 1) };
+        }
+    };
+    let is_sorted = |arr: &[isize]| arr.windows(2).all(|w| w[0] <= w[1]);
+
+    let mut a: Vec<isize> = vec![];
+    sort(&mut a);
+    assert!(is_sorted(&a));
+    println!("  [✓] empty      → {:?}", a);
+
+    let mut a = vec![42isize];
+    sort(&mut a);
+    assert_eq!(a, vec![42]);
+    println!("  [✓] single     → {:?}", a);
+
+    let mut a: Vec<isize> = (1..=8).collect();
+    sort(&mut a);
+    assert!(is_sorted(&a));
+    println!("  [✓] sorted     → {:?}", a);
+
+    let mut a: Vec<isize> = (1..=8).rev().collect();
+    sort(&mut a);
+    assert!(is_sorted(&a));
+    println!("  [✓] reverse    → {:?}", a);
+
+    let mut a: Vec<isize> = vec![3,1,4,1,5,9,2,6,5,3,5];
+    let mut want = a.clone(); want.sort();
+    sort(&mut a);
+    assert_eq!(a, want);
+    println!("  [✓] random     → {:?}", a);
+
+    let mut a = vec![7isize; 8];
+    sort(&mut a);
+    assert!(a.iter().all(|&x| x == 7));
+    println!("  [✓] equal      → {:?}", a);
+
+    let mut a = vec![9isize, 1];
+    sort(&mut a);
+    assert_eq!(a, vec![1, 9]);
+    println!("  [✓] two-elem   → {:?}", a);
+
+    let mut a: Vec<isize> = vec![-5,10,-3,0,7,-1,4];
+    let mut want = a.clone(); want.sort();
+    sort(&mut a);
+    assert_eq!(a, want);
+    println!("  [✓] negatives  → {:?}", a);
+
     {
-        let result = unsafe { (jit_add.get())(10i32) };
-        assert_eq!(result, 20, "const_add FAIL");
-        println!("  [✓] const_add(10) = {}", result);
+        let mut rng: u64 = 0xDEAD_BEEF_1234_5678;
+        let mut a: Vec<isize> = (0..1000).map(|_| {
+            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((rng >> 33) as isize) % 10000 - 5000
+        }).collect();
+        let mut want = a.clone(); want.sort();
+        sort(&mut a);
+        assert_eq!(a, want);
+        println!("  [✓] large n=1000  ✓ sorted");
     }
 
-    println!("\n[*] Building const_return JIT stub");
-    let jit_return = build_const_return();
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        let result = unsafe { (jit_return.get())() };
-        assert_eq!(result, 10, "const_return FAIL");
-        println!("  [✓] const_return(10) = {}", result);
+        let mut rng: u64 = 0xCAFE_BABE_0000_0001;
+        let mut a: Vec<isize> = (0..256).map(|_| {
+            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (rng >> 33) as isize % 1000
+        }).collect();
+        let mut want = a.clone(); want.sort();
+        sort(&mut a);
+        assert_eq!(a, want);
+        println!("  [✓] vs stdlib n=256 ✓ identical");
     }
-    println!("\n[✓] All JIT stubs verified on {} !", arch);
+
+    println!("\n[✓] All tests passed on {} !", arch);
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+}
+#[test]
+fn test_jit_bubblesort() {
+    println!("\n[*] Testing JIT BubbleSort ...");
+    let jit_bs = build_bubblesort();
+    println!("    Entry: {:p}  Size: {} bytes", jit_bs.entry_addr(), jit_bs.code_size());
+
+    // 封装调用逻辑
+    let sort = |arr: &mut Vec<isize>| {
+        let n = arr.len() as isize;
+        if n > 1 {
+            unsafe { 
+                // 注意：冒泡排序通常传入 (指针, 长度)
+                (jit_bs.get())(arr.as_mut_ptr(), n) 
+            };
+        }
+    };
+
+    // 辅助函数：检查是否有序
+    let is_sorted = |arr: &[isize]| arr.windows(2).all(|w| w[0] <= w[1]);
+
+    // --- 测试用例 1: 空数组 ---
+    let mut a1: Vec<isize> = vec![];
+    sort(&mut a1);
+    assert!(is_sorted(&a1));
+    println!("  [✓] Empty array      -> {:?}", a1);
+
+    // --- 测试用例 2: 单个元素 ---
+    let mut a2 = vec![42];
+    sort(&mut a2);
+    assert!(is_sorted(&a2));
+    println!("  [✓] Single element   -> {:?}", a2);
+
+    // --- 测试用例 3: 逆序数组 (最差情况) ---
+    let mut a3 = vec![5, 4, 3, 2, 1];
+    sort(&mut a3);
+    assert!(is_sorted(&a3));
+    println!("  [✓] Reverse sorted   -> {:?}", a3);
+
+    // --- 测试用例 4: 包含重复项的乱序数组 ---
+    let mut a4 = vec![3, 1, 4, 1, 5, 9, 2, 6, 5];
+    sort(&mut a4);
+    assert!(is_sorted(&a4));
+    println!("  [✓] Random w/ dups   -> {:?}", a4);
+
+    // --- 测试用例 5: 大规模随机测试 ---
+    use std::time::Instant;
+    let mut a5: Vec<isize> = (0..1000).rev().collect(); // 1000 到 0
+    let now = Instant::now();
+    sort(&mut a5);
+    let elapsed = now.elapsed();
+    assert!(is_sorted(&a5));
+    println!("  [✓] 1000 items (rev) -> Sorted in {:?}", elapsed);
 }

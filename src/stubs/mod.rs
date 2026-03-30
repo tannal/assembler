@@ -1,16 +1,163 @@
 // ============================================================
-//  src/stubs/mod.rs  —  跨平台 JIT Stub 生成器
+//  src/stubs/mod.rs  —  跨平台 Stub 生成器
 //
-//  每个 stub 函数根据编译时的 target_arch 选择合适的
-//  Assembler 实现，对外暴露统一的 build_xxx() 接口。
+//  所有 emit_xxx 函数体内部不含任何 #[cfg]。
+//  架构差异完全由 MacroAssembler<NativeBackend> 抹平。
 // ============================================================
 
-pub mod sum_array;
-pub mod factorial;
-pub mod const_add;
-pub mod const_return;
+use crate::macro_asm::{Cond, MacroAssembler, MacroAssemblerBackend, NativeBackend, VReg};
+use crate::runtime::JitFn;
 
-pub use sum_array::build_sum_array;
-pub use factorial::build_factorial;
-pub use const_add::build_const_add;
-pub use const_return::build_const_return;
+pub mod quicksort;
+pub mod bubble_sort;
+
+pub use quicksort::build_quicksort;
+pub use bubble_sort::build_bubblesort;
+
+// ──────────────────────────────────────────────────────────────
+// 内部胶水：把 emit 闭包编译成 JitFn<F>
+// ──────────────────────────────────────────────────────────────
+
+fn compile_stub<B, F, Body>(body: Body) -> JitFn<F>
+where
+    B: MacroAssemblerBackend,
+    F: Copy,
+    Body: FnOnce(&mut MacroAssembler<B>),
+{
+    let mut masm = MacroAssembler::<B>::new();
+    body(&mut masm);
+    unsafe { masm.compile() }
+}
+
+// ──────────────────────────────────────────────────────────────
+// § 1  sum_array  —  一份 emit，所有平台共用
+//
+//  fn sum_array(ptr: *const T, len: isize) -> T
+//
+//  VReg:  Arg(0)=ptr  Arg(1)=len  Ret=acc  Cnt=i  Tmp(0)=elem
+// ──────────────────────────────────────────────────────────────
+
+fn emit_sum_array<B: MacroAssemblerBackend>(masm: &mut MacroAssembler<B>) {
+    let ptr  = VReg::Arg(0);
+    let len  = VReg::Arg(1);
+    let acc  = VReg::Ret;
+    let i    = VReg::Cnt;
+    let elem = VReg::Tmp(0);
+
+    masm.prologue();
+    masm.zero(acc);
+    masm.zero(i);
+
+    let loop_start = masm.new_label();
+    let done       = masm.new_label();
+
+    masm.bind(&loop_start);
+    masm.cmp(i, len);
+    masm.jump_if(Cond::Ge, &done);
+
+    masm.load_ptr_scaled(elem, ptr, i);
+    masm.add(acc, acc, elem);
+    masm.inc(i);
+    masm.jump(&loop_start);
+
+    masm.bind(&done);
+    masm.epilogue();
+    masm.ret();
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub fn build_sum_array() -> JitFn<unsafe extern "C" fn(*const i64, i64) -> i64> {
+    compile_stub::<NativeBackend, _, _>(emit_sum_array)
+}
+
+#[cfg(target_arch = "arm")]
+pub fn build_sum_array() -> JitFn<unsafe extern "C" fn(*const i32, i32) -> i32> {
+    compile_stub::<NativeBackend, _, _>(emit_sum_array)
+}
+
+// ──────────────────────────────────────────────────────────────
+// § 2  factorial  —  迭代阶乘
+//
+//  fn factorial(n: i64) -> i64
+//
+//  VReg:  Arg(0)=n  Ret=acc  Tmp(0)=常量1
+// ──────────────────────────────────────────────────────────────
+
+fn emit_factorial<B: MacroAssemblerBackend>(masm: &mut MacroAssembler<B>) {
+    let n   = VReg::Arg(0);
+    let acc = VReg::Ret;
+    let one = VReg::Tmp(0);
+
+    masm.prologue();
+    masm.mov_imm(acc, 1);
+    masm.mov_imm(one, 1);
+
+    let loop_start = masm.new_label();
+    let done       = masm.new_label();
+
+    masm.bind(&loop_start);
+    masm.cmp(n, one);
+    masm.jump_if(Cond::Le, &done);
+
+    masm.mul(acc, acc, n);
+    masm.dec(n);
+    masm.jump(&loop_start);
+
+    masm.bind(&done);
+    masm.epilogue();
+    masm.ret();
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub fn build_factorial() -> JitFn<unsafe extern "C" fn(i64) -> i64> {
+    compile_stub::<NativeBackend, _, _>(emit_factorial)
+}
+
+#[cfg(target_arch = "arm")]
+pub fn build_factorial() -> JitFn<unsafe extern "C" fn(i32) -> i32> {
+    compile_stub::<NativeBackend, _, _>(emit_factorial)
+}
+
+// ──────────────────────────────────────────────────────────────
+// § 3  const_add  —  return x + 10（循环演示）
+//
+//  fn const_add(x: i64) -> i64
+//
+//  VReg:  Arg(0)=x  Cnt=i  Tmp(0)=零常量
+// ──────────────────────────────────────────────────────────────
+
+fn emit_const_add<B: MacroAssemblerBackend>(masm: &mut MacroAssembler<B>) {
+    let x    = VReg::Arg(0);
+    let i    = VReg::Cnt;
+    let zero = VReg::Tmp(0);
+
+    masm.prologue();
+    masm.mov_imm(i, 10);
+    masm.zero(zero);
+
+    let loop_start = masm.new_label();
+    let done       = masm.new_label();
+
+    masm.bind(&loop_start);
+    masm.cmp(i, zero);
+    masm.jump_if(Cond::Eq, &done);
+
+    masm.inc(x);
+    masm.dec(i);
+    masm.jump(&loop_start);
+
+    masm.bind(&done);
+    masm.mov(VReg::Ret, x);
+    masm.epilogue();
+    masm.ret();
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub fn build_const_add() -> JitFn<unsafe extern "C" fn(i64) -> i64> {
+    compile_stub::<NativeBackend, _, _>(emit_const_add)
+}
+
+#[cfg(target_arch = "arm")]
+pub fn build_const_add() -> JitFn<unsafe extern "C" fn(i32) -> i32> {
+    compile_stub::<NativeBackend, _, _>(emit_const_add)
+}

@@ -221,6 +221,20 @@ impl X64Assembler {
         }
     }
 
+    /// SUB r64, r64
+    pub fn sub_r64_r64(&mut self, dst: Reg64, src: Reg64) {
+        // 0x29: SUB r/m64, r64  (reg=src, rm=dst)
+        self.rex_w(src.0, dst.0);
+        self.emit1(0x29);
+        self.modrm_rr(src.0, dst.0);
+    }
+
+    /// PUSH r12  (41 54)
+    pub fn push_r12(&mut self) { self.emit2(0x41, 0x54); }
+
+    /// POP r12   (41 5C)
+    pub fn pop_r12(&mut self)  { self.emit2(0x41, 0x5C); }
+
     /// SUB r64, imm32
     pub fn sub_r64_imm32(&mut self, dst: Reg64, imm: i32) {
         self.rex_w(0, dst.0);
@@ -269,6 +283,62 @@ impl X64Assembler {
         self.emit_i32(imm);
     }
 
+    pub fn cmp_reg_imm(&mut self, reg: Reg64, imm: i64) {
+        let r_idx = reg.0; // 获取寄存器编号 (0-7, 或处理 REX.B)
+
+        if imm >= -128 && imm <= 127 {
+            // --- CMP r/m64, imm8 ---
+            // REX.W (0x48) | Opcode (0x83) | ModR/M (0xF8 + reg) | imm8
+            self.buf.push(0x48);
+            self.buf.push(0x83);
+            self.buf.push(0xF8 | r_idx); 
+            self.buf.push(imm as u8);
+        } else if imm >= i32::MIN as i64 && imm <= i32::MAX as i64 {
+            // --- CMP r/m64, imm32 ---
+            // REX.W (0x48) | Opcode (0x81) | ModR/M (0xF8 + reg) | imm32 (LE)
+            self.buf.push(0x48);
+            self.buf.push(0x81);
+            self.buf.push(0xF8 | r_idx);
+            self.buf.extend_from_slice(&(imm as i32).to_le_bytes());
+        } else {
+            // --- 超过 32 位：必须中转 ---
+            let scratch = reg::r11; // 假设 R11 是内部 Scratch
+            self.mov_r64_imm64(scratch, imm);
+            self.cmp_r64_r64(reg, scratch);
+        }
+    }
+
+    // ── 栈操作（任意寄存器）──────────────────────────────────
+
+    /// PUSH r64  (r0-r7: 50+rd; r8-r15: REX.B + 50+(rd&7))
+    pub fn push_r64(&mut self, r: Reg64) {
+        if r.0 >= 8 { self.emit1(0x41); }
+        self.emit1(0x50 | (r.0 & 7));
+    }
+
+    /// POP r64
+    pub fn pop_r64(&mut self, r: Reg64) {
+        if r.0 >= 8 { self.emit1(0x41); }
+        self.emit1(0x58 | (r.0 & 7));
+    }
+
+    // ── 内存写入（store）─────────────────────────────────────
+
+    /// MOV [base + index*8], src  (store 64-bit, SIB scale=3)
+    pub fn mov_mem_base_idx8_r64(&mut self, base: Reg64, idx: Reg64, src: Reg64) {
+        // REX.W + REX.R(src) + REX.X(idx) + REX.B(base)
+        let rex = 0x48
+            | (if src.0  & 8 != 0 { 0x04 } else { 0 })
+            | (if idx.0  & 8 != 0 { 0x02 } else { 0 })
+            | (if base.0 & 8 != 0 { 0x01 } else { 0 });
+        self.emit1(rex);
+        self.emit1(0x89); // MOV r/m64, r64
+        // ModRM: mod=00 reg=src&7 rm=100(SIB)
+        self.emit1((src.0 & 7) << 3 | 0x04);
+        // SIB: scale=3(×8) index=idx&7 base=base&7
+        self.emit1((3 << 6) | ((idx.0 & 7) << 3) | (base.0 & 7));
+    }
+
     // ── 跳转 ─────────────────────────────────────────────────
 
     pub fn jmp(&mut self, lbl: &Label) { self.emit1(0xE9); self.emit_rel32_for(lbl); }
@@ -280,6 +350,14 @@ impl X64Assembler {
     pub fn jge(&mut self, lbl: &Label) { self.emit2(0x0F, 0x8D); self.emit_rel32_for(lbl); }
     pub fn jle(&mut self, lbl: &Label) { self.emit2(0x0F, 0x8E); self.emit_rel32_for(lbl); }
     pub fn jg (&mut self, lbl: &Label) { self.emit2(0x0F, 0x8F); self.emit_rel32_for(lbl); }
+
+    // ── 函数调用 ─────────────────────────────────────────────
+
+    /// CALL rel32  (E8 cd)
+    pub fn call_label(&mut self, lbl: &Label) {
+        self.emit1(0xE8);
+        self.emit_rel32_for(lbl);
+    }
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -309,3 +387,5 @@ impl ArchAssembler for X64Assembler {
     fn ret(&mut self) { self.emit1(0xC3); }
     fn arch(&self) -> Arch { Arch::X86_64 }
 }
+
+

@@ -96,6 +96,9 @@ impl ArmAssembler {
         self.buf.extend_from_slice(&bytes);
     }
 
+    /// 公开版 emit_t32（供 Backend 直接使用）
+    pub fn emit_t32_pub(&mut self, insn: u32) { self.emit_t32(insn); }
+
     // ── 回填工具 ─────────────────────────────────────────────
 
     /// 回填 Thumb-2 B{cond}/B 的 20-bit 或 24-bit 偏移
@@ -346,6 +349,62 @@ impl ArmAssembler {
     /// BX lr  (从 Thumb 函数返回)
     pub fn bx_lr(&mut self) {
         self.emit_t16(0x4770);
+    }
+
+    // ── 多寄存器 push / pop（供 prologue/epilogue 使用）────────
+
+    /// PUSH {r4-r7, lr}  (Thumb-2 32-bit STMDB sp!, {r4,r5,r6,r7,lr})
+    pub fn emit_push_r4_r7_lr(&mut self) {
+        // hw1=0xE92D (STMDB sp!), hw2=0x40F0 (bit14=lr, bit7-4=r7..r4)
+        self.emit_t32(0xE92D_40F0);
+    }
+
+    /// POP {r4-r7, pc}  (Thumb-2 32-bit LDMIA sp!, {r4,r5,r6,r7,pc})
+    pub fn emit_pop_r4_r7_pc(&mut self) {
+        // hw1=0xE8BD (LDMIA sp!), hw2=0x80F0 (bit15=pc, bit7-4=r7..r4)
+        self.emit_t32(0xE8BD_80F0);
+    }
+
+    // ── CMP 32-bit Thumb-2（任意寄存器）─────────────────────────
+
+    /// CMP Rn, Rm  (32-bit Thumb-2 T3，支持 r8-r15)
+    pub fn cmp_reg_t32(&mut self, lhs: Reg, rhs: Reg) {
+        // CMP (register) T3: 0xEBB0_0F00 | (Rn<<16) | Rm
+        // SUBS (shifted reg, S=1, Rd=0b1111=XZR/discard)
+        let insn = 0xEBB0_0F00u32 | ((lhs.0 as u32) << 16) | rhs.0 as u32;
+        self.emit_t32(insn);
+    }
+
+    // ── 直接代理（让 Backend 不需要 use ArchAssembler）──────────
+
+    pub fn new_label(&mut self) -> Label       { self.labels.new_label() }
+    pub fn bind(&mut self, label: &Label)      {
+        let pos = self.buf.len();
+        let sites = self.labels.bind(label, pos);
+        for site in sites { self.patch_thumb2_b(site.offset, pos); }
+    }
+    pub fn ret(&mut self) { self.bx_lr(); }
+
+    // ── 内存写入（store）─────────────────────────────────────
+
+    /// STR Rd, [Rbase, Ridx, LSL #2]  (32-bit word store)
+    pub fn str_reg_lsl2(&mut self, src: Reg, base: Reg, idx: Reg) {
+        // STR (register) T2: 0xF840_0020 | (Rn<<16) | (Rt<<12) | (shift<<4) | Rm
+        let insn = 0xF840_0020u32
+            | ((base.0 as u32) << 16)
+            | ((src.0  as u32) << 12)
+            | ((2u32) << 4)      // LSL #2
+            | idx.0 as u32;
+        self.emit_t32(insn);
+    }
+
+    // ── 函数调用 ─────────────────────────────────────────────
+
+    /// BL <label>  (Thumb-2 T1, ±16MB)
+    pub fn bl(&mut self, lbl: &Label) {
+        // BL 使用和 B 相同的 T4 编码，但 hw2 的 bit12=1 (BL) 而非 0 (B)
+        // hw1=0xF000, hw2=0xD000 (BL T1: J1=1 J2=1 bit12=1)
+        self.emit_branch_target(lbl, 0xF000, 0xD000, PatchWidth::ArmBranch26);
     }
 }
 
