@@ -47,7 +47,7 @@ pub fn build_quicksort() -> JitFn<unsafe extern "C" fn(*mut isize, isize, isize)
     // 函数入口（递归 call_label 跳回此处）
     // ─────────────────────────────────────────────────────────
     let entry = m.new_label();
-    let done  = m.new_label();
+    let done = m.new_label();
 
     m.bind(&entry);
 
@@ -56,10 +56,10 @@ pub fn build_quicksort() -> JitFn<unsafe extern "C" fn(*mut isize, isize, isize)
     m.jump_if(Cond::Ge, &done);
 
     // ── 建帧 + 保存所有跨递归寄存器 ──────────────────────────
-    m.prologue();          // 平台标准 prologue（保 fp/lr 等）
-    m.push_vreg(Arg(0));   // ptr
-    m.push_vreg(Arg(1));   // low
-    m.push_vreg(Arg(2));   // high
+    m.prologue(); // 平台标准 prologue（保 fp/lr 等）
+    m.push_vreg(Arg(0)); // ptr
+    m.push_vreg(Arg(1)); // low
+    m.push_vreg(Arg(2)); // high
 
     // ─────────────────────────────────────────────────────────
     // PARTITION (Lomuto)
@@ -86,9 +86,9 @@ pub fn build_quicksort() -> JitFn<unsafe extern "C" fn(*mut isize, isize, isize)
     // j = low
     m.mov(Tmp(2), Arg(1));
 
-    let loop_top  = m.new_label();
+    let loop_top = m.new_label();
     let loop_exit = m.new_label();
-    let no_swap   = m.new_label();
+    let no_swap = m.new_label();
 
     m.bind(&loop_top);
 
@@ -108,25 +108,25 @@ pub fn build_quicksort() -> JitFn<unsafe extern "C" fn(*mut isize, isize, isize)
 
     // swap arr[i] ↔ arr[j]
     //   Ret = arr[i]  (借 Ret 做第二临时)
-    m.load_ptr_scaled(Ret, Arg(0), Tmp(1));    // Ret   = arr[i]
-    m.store_ptr_scaled(Arg(0), Tmp(1), Tmp(3));// arr[i] = arr[j]
-    m.store_ptr_scaled(Arg(0), Tmp(2), Ret);   // arr[j] = old arr[i]
+    m.load_ptr_scaled(Ret, Arg(0), Tmp(1)); // Ret   = arr[i]
+    m.store_ptr_scaled(Arg(0), Tmp(1), Tmp(3)); // arr[i] = arr[j]
+    m.store_ptr_scaled(Arg(0), Tmp(2), Ret); // arr[j] = old arr[i]
 
     m.bind(&no_swap);
-    m.inc(Tmp(2));   // j++
+    m.inc(Tmp(2)); // j++
     m.jump(&loop_top);
 
     m.bind(&loop_exit);
 
     // pivot 归位：swap arr[i+1] ↔ arr[high]
-    m.inc(Tmp(1));                              // Tmp(1) = pivot_pos
+    m.inc(Tmp(1)); // Tmp(1) = pivot_pos
 
     m.load_ptr_scaled(Tmp(3), Arg(0), Tmp(1)); // Tmp(3) = arr[pivot_pos]
-    m.store_ptr_scaled(Arg(0), Tmp(1), Tmp(0));// arr[pivot_pos] = pivot
-    m.store_ptr_scaled(Arg(0), Arg(2), Tmp(3));// arr[high]      = old arr[pivot_pos]
+    m.store_ptr_scaled(Arg(0), Tmp(1), Tmp(0)); // arr[pivot_pos] = pivot
+    m.store_ptr_scaled(Arg(0), Arg(2), Tmp(3)); // arr[high]      = old arr[pivot_pos]
 
     // pivot_pos 需要跨两次递归存活 → 保存到栈
-    m.push_vreg(Tmp(1));   // push pivot_pos
+    m.push_vreg(Tmp(1)); // push pivot_pos
 
     // ─────────────────────────────────────────────────────────
     // 递归左半：quicksort(ptr, low, pivot_pos - 1)
@@ -135,26 +135,26 @@ pub fn build_quicksort() -> JitFn<unsafe extern "C" fn(*mut isize, isize, isize)
     //   Arg(2) = pivot_pos - 1
     // ─────────────────────────────────────────────────────────
     m.mov(Arg(2), Tmp(1));
-    m.dec(Arg(2));                 // Arg(2) = pivot_pos - 1
-    // Arg(0) 和 Arg(1) 在 partition 中未改变
+    m.dec(Arg(2)); // Arg(2) = pivot_pos - 1
+                   // Arg(0) 和 Arg(1) 在 partition 中未改变
 
-    m.call_label(&entry);          // ← 递归左半
+    m.call_label(&entry); // ← 递归左半
 
     // ─────────────────────────────────────────────────────────
     // 递归右半：quicksort(ptr, pivot_pos + 1, high)
     //   恢复 pivot_pos，再从栈上恢复 high 与 ptr
     // ─────────────────────────────────────────────────────────
-    m.pop_vreg(Tmp(1));            // Tmp(1) = pivot_pos（恢复）
-    m.pop_vreg(Arg(2));            // Arg(2) = high（恢复）
-    m.pop_vreg(Arg(1));            // Arg(1) = low（恢复，此处不再使用但要平栈）
-    m.pop_vreg(Arg(0));            // Arg(0) = ptr（恢复）
+    m.pop_vreg(Tmp(1)); // Tmp(1) = pivot_pos（恢复）
+    m.pop_vreg(Arg(2)); // Arg(2) = high（恢复）
+    m.pop_vreg(Arg(1)); // Arg(1) = low（恢复，此处不再使用但要平栈）
+    m.pop_vreg(Arg(0)); // Arg(0) = ptr（恢复）
 
     // 重设右递归参数
     m.mov(Arg(1), Tmp(1));
-    m.inc(Arg(1));                 // Arg(1) = pivot_pos + 1
-    // Arg(0) = ptr（刚恢复）, Arg(2) = high（刚恢复）
+    m.inc(Arg(1)); // Arg(1) = pivot_pos + 1
+                   // Arg(0) = ptr（刚恢复）, Arg(2) = high（刚恢复）
 
-    m.call_label(&entry);          // ← 递归右半
+    m.call_label(&entry); // ← 递归右半
 
     // ─────────────────────────────────────────────────────────
     // 清理并返回
@@ -169,19 +169,21 @@ pub fn build_quicksort() -> JitFn<unsafe extern "C" fn(*mut isize, isize, isize)
 #[test]
 fn test_jit_quicksort() {
     println!("\n[*] Testing JIT Quicksort (Cross-Platform Stub) ...");
-    
+
     // 1. 构建 JIT 函数
     let jit_qs = build_quicksort();
-    println!("    Entry: {:p}  Size: {} bytes", jit_qs.entry_addr(), jit_qs.code_size());
+    println!(
+        "    Entry: {:p}  Size: {} bytes",
+        jit_qs.entry_addr(),
+        jit_qs.code_size()
+    );
 
     // 2. 封装调用闭包，处理参数对齐
     // 签名: fn(ptr, low, high)
     let sort = |arr: &mut Vec<isize>| {
         let n = arr.len() as isize;
         if n > 1 {
-            unsafe {
-                (jit_qs.get())(arr.as_mut_ptr(), 0, n - 1)
-            };
+            unsafe { (jit_qs.get())(arr.as_mut_ptr(), 0, n - 1) };
         }
     };
 
@@ -219,11 +221,11 @@ fn test_jit_quicksort() {
     use std::time::Instant;
     let size = 1000;
     let mut a5: Vec<isize> = (0..size).rev().collect(); // 构造大逆序
-    
+
     let now = Instant::now();
     sort(&mut a5);
     let elapsed = now.elapsed();
-    
+
     assert!(is_sorted(&a5));
     println!("  [✓] {} elements sorted in {:?}", size, elapsed);
 }
