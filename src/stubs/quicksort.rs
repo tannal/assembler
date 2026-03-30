@@ -229,3 +229,4 @@ fn test_jit_quicksort() {
     assert!(is_sorted(&a5));
     println!("  [✓] {} elements sorted in {:?}", size, elapsed);
 }
+

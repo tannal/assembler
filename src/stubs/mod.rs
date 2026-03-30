@@ -7,6 +7,7 @@
 
 use crate::macro_asm::{Cond, MacroAssembler, MacroAssemblerBackend, NativeBackend, VReg};
 use crate::runtime::JitFn;
+use crate::util::hexdump::hex_disassemble;
 
 pub mod quicksort;
 pub mod bubble_sort;
@@ -150,6 +151,7 @@ fn emit_const_add<B: MacroAssemblerBackend>(masm: &mut MacroAssembler<B>) {
     masm.mov(VReg::Ret, x);
     masm.epilogue();
     masm.ret();
+
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -222,4 +224,19 @@ mod tests {
         // 这种方式需要你之前修复的 into_bytes 或类似的 view_code 逻辑
         println!("sum_array code size: {} bytes", build_sum_array().code_size());
     }
+}
+
+#[test]
+fn visualize_all_stubs() {
+    // 1. sum_array
+    let jit_sum = build_sum_array();
+    hex_disassemble("sum_array", jit_sum.as_bytes());
+
+    // 2. factorial
+    let jit_fact = build_factorial();
+    hex_disassemble("factorial", jit_fact.as_bytes());
+
+    // 3. const_add
+    let jit_add = build_const_add();
+    hex_disassemble("const_add", jit_add.as_bytes());
 }

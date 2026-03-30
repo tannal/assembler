@@ -31,6 +31,14 @@ impl<F: Copy> JitFn<F> {
         self._buf.as_ptr()
     }
 
+    /// 获取生成的机器码字节切片
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            // 将执行内存的起始地址和长度转为 &[u8]
+            std::slice::from_raw_parts(self._buf.as_ptr(), self._buf.len())
+        }
+    }
+
     /// 代码大小（字节）
     pub fn code_size(&self) -> usize {
         self._buf.len()

@@ -14,25 +14,25 @@ fn show_sum_array_bytes() {
     use jit_assembler::arch::x64::{reg::*, X64Assembler};
     use jit_assembler::runtime::JitRuntime;
     let mut asm = X64Assembler::new();
-    asm.push_rbp();
-    asm.mov_rbp_rsp();
-    asm.xor_r64_r64(rax, rax);
-    #[cfg(target_os = "windows")]
-    let (arr, len, idx) = (rcx, rdx, r11);
-    #[cfg(not(target_os = "windows"))]
-    let (arr, len, idx) = (rdi, rsi, rcx);
-    asm.xor_r64_r64(idx, idx);
-    let ls = asm.new_label();
-    let dn = asm.new_label();
-    asm.bind(&ls);
-    asm.cmp_r64_r64(idx, len);
-    asm.jge(&dn);
-    asm.mov_r64_mem_base_idx8(r10, arr, idx);
-    asm.add_r64_r64(rax, r10);
-    asm.inc_r64(idx);
-    asm.jmp(&ls);
-    asm.bind(&dn);
-    asm.pop_rbp();
+    // asm.push_rbp();
+    // asm.mov_rbp_rsp();
+    // asm.xor_r64_r64(rax, rax);
+    // #[cfg(target_os = "windows")]
+    // let (arr, len, idx) = (rcx, rdx, r11);
+    // #[cfg(not(target_os = "windows"))]
+    // let (arr, len, idx) = (rdi, rsi, rcx);
+    // asm.xor_r64_r64(idx, idx);
+    // let ls = asm.new_label();
+    // let dn = asm.new_label();
+    // asm.bind(&ls);
+    // asm.cmp_r64_r64(idx, len);
+    // asm.jge(&dn);
+    // asm.mov_r64_mem_base_idx8(r10, arr, idx);
+    // asm.add_r64_r64(rax, r10);
+    // asm.inc_r64(idx);
+    // asm.jmp(&ls);
+    // asm.bind(&dn);
+    // asm.pop_rbp();
     asm.ret();
     hexdump("sum_array (x86-64 raw)", &JitRuntime::assemble_bytes(asm));
 }
