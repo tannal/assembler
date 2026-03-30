@@ -127,6 +127,64 @@ fn emit_fibonacci_recursive<B: MacroAssemblerBackend>(masm: &mut MacroAssembler<
     masm.ret();
 }
 
+// ──────────────────────────────────────────────────────────────
+// § Fibonacci  —  尾递归实现 (Tail Call Optimized)
+//
+//  Rust 逻辑:
+//  fn fib_tail(n: i64, a: i64, b: i64) -> i64 {
+//      if n == 0 { return a; }
+//      return fib_tail(n - 1, b, a + b);
+//  }
+//
+//  寄存器分配 (System V ABI):
+//  Arg(0): n,  Arg(1): a (curr),  Arg(2): b (next)
+// ──────────────────────────────────────────────────────────────
+
+fn emit_fibonacci_tailcall<B: MacroAssemblerBackend>(masm: &mut MacroAssembler<B>) {
+    let n    = VReg::Arg(0);
+    let a    = VReg::Arg(1); // 当前值 (F_i)
+    let b    = VReg::Arg(2); // 下一值 (F_{i+1})
+    let res  = VReg::Ret;
+    let tmp  = VReg::Tmp(0);
+
+    // 函数入口
+    let entry = masm.new_label();
+    masm.bind(&entry);
+
+    // --- 1. Base Case: if n == 0 return a ---
+    let recursive_step = masm.new_label();
+    masm.zero(tmp);
+    masm.cmp(n, tmp);
+    masm.jump_if(Cond::Ne, &recursive_step);
+
+    masm.mov(res, a); // 返回 a
+    masm.ret();
+
+    // --- 2. Tail Call Step ---
+    masm.bind(&recursive_step);
+
+    // 我们要计算: n = n-1, a = b, b = a + b
+    // 注意顺序，防止覆盖
+    masm.mov(tmp, a);     // tmp = a
+    masm.add(a, b, tmp);  // a = b + a (这是新的 b)
+    
+    // 此时寄存器状态需要对齐到下一次调用的 Arg 映射:
+    // 下一次的 Arg(1) 应该是当前的 b
+    // 下一次的 Arg(2) 应该是当前的 a+b (即现在的 a)
+    
+    let next_a = b;      // 下一轮的 a 是这一轮的 b
+    let next_b = a;      // 下一轮的 b 是刚才算的 sum
+    
+    masm.mov(VReg::Arg(1), next_a);
+    masm.mov(VReg::Arg(2), next_b);
+    masm.dec(n);         // n = n - 1
+
+    // 【核心：尾调用优化】
+    // 不使用 call，而是直接 jmp 回入口！
+    // 这样不会增加任何栈深度。
+    masm.jump(&entry);
+}
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub fn build_fibonacci() -> JitFn<unsafe extern "C" fn(i64) -> i64> {
     use crate::{macro_asm::NativeBackend, stubs::compile_stub};
@@ -149,6 +207,18 @@ pub fn build_fibonacci_recursive() -> JitFn<unsafe extern "C" fn(i64) -> i64> {
 #[cfg(target_arch = "arm")]
 pub fn build_fibonacci_recursive() -> JitFn<unsafe extern "C" fn(i32) -> i32> {
     compile_stub::<NativeBackend, _, _>(emit_fibonacci_recursive)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub fn build_fibonacci_tailcall() -> JitFn<unsafe extern "C" fn(i64) -> i64> {
+    use crate::{macro_asm::NativeBackend, stubs::compile_stub};
+
+    compile_stub::<NativeBackend, _, _>(emit_fibonacci_tailcall)
+}
+
+#[cfg(target_arch = "arm")]
+pub fn build_fibonacci_tailcall() -> JitFn<unsafe extern "C" fn(i32) -> i32> {
+    compile_stub::<NativeBackend, _, _>(emit_fibonacci_tailcall)
 }
 
 #[test]
@@ -188,5 +258,25 @@ fn test_jit_fibonacci_recursive() {
         }
     }
     hex_disassemble("fibonacci recursive", jit_fib.as_bytes());
+    println!("  [✓] Fibonacci sequence up to F(20) is correct.");
+}
+
+#[test]
+fn test_jit_fibonacci_tailcall() {
+    println!("\n[*] Testing JIT Fibonacci (tailcall) ...");
+    let jit_fib = build_fibonacci_tailcall();
+
+    let test_cases = [
+        (0, 0), (1, 1), (2, 1), (3, 2), (4, 3),
+        (5, 5), (6, 8), (10, 55), (20, 6765)
+    ];
+
+    for (input, expected) in test_cases {
+        unsafe {
+            let result = (jit_fib.get())(input);
+            assert_eq!(result, expected, "fib({}) failed!", input);
+        }
+    }
+    hex_disassemble("fibonacci tailcall", jit_fib.as_bytes());
     println!("  [✓] Fibonacci sequence up to F(20) is correct.");
 }

@@ -173,4 +173,8 @@ impl MacroAssemblerBackend for Arm64Backend {
     fn pop(&mut self, reg: VReg) {
         todo!()
     }
+    
+    fn call_reg(&mut self, reg: VReg) {
+        todo!()
+    }
 }

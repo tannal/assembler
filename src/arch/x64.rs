@@ -358,6 +358,25 @@ impl X64Assembler {
         self.emit1(0xE8);
         self.emit_rel32_for(lbl);
     }
+
+    pub fn call_r64(&mut self, reg: Reg64) {
+        let reg_code = reg.0;
+        
+        // 1. 处理 REX 前缀 (针对 R8-R15)
+        if reg_code >= 8 {
+            self.buf.push(0x41); // REX.B
+        }
+
+        // 2. Opcode
+        self.buf.push(0xFF);
+
+        // 3. ModRM 字节
+        // Mod: 11 (寄存器模式)
+        // Reg/Opcode: 010 (十进制 2, 间接调用专用)
+        // R/M: reg_code & 7
+        let mod_rm = 0xC0 | (0x02 << 3) | (reg_code & 7);
+        self.buf.push(mod_rm);
+    }
 }
 
 // ──────────────────────────────────────────────────────────────

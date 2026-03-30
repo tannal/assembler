@@ -54,6 +54,8 @@ pub enum VReg {
     Cnt,
     /// 专用指针寄存器（数组基址等）
     Ptr,
+    // 栈帧寄存器
+    StackPtr,
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -168,6 +170,8 @@ pub trait MacroAssemblerBackend: Sized {
     /// CALL label（保存返回地址，跳到 label）
     fn call_label(&mut self, label: &Label);
 
+    fn call_reg(&mut self, reg: VReg);
+
     /// 将寄存器压栈保存（callee-saved 场景）
     fn push_vreg(&mut self, r: VReg);
 
@@ -226,10 +230,60 @@ impl<B: MacroAssemblerBackend> MacroAssembler<B> {
     pub fn jump_if(&mut self, c: Cond, lbl: &Label) { self.backend.jump_if(c, lbl) }
     pub fn jump(&mut self, lbl: &Label)             { self.backend.jump(lbl) }
     pub fn call_label(&mut self, lbl: &Label)       { self.backend.call_label(lbl) }
+    pub fn call_reg(&mut self, reg: VReg) {
+        self.backend.call_reg(reg);
+    }
+
+    /// 工业级安全调用包装
+    pub fn safe_call(&mut self, target_reg: VReg, args_count: usize) {
+        // 1. 计算溢出到栈上的参数数量
+        let num_stack_args = if args_count > 4 { args_count - 4 } else { 0 };
+        
+        // 2. 计算需要分配的总空间
+        // Shadow Space (32) + Stack Args (N * 8)
+        let mut total_space = 32 + (num_stack_args * 8);
+        
+        // 3. 动态对齐补丁 (16字节对齐)
+        // 加上返回地址(8)和之前prologue(8)，当前栈已经是16对齐
+        // 所以 total_space 必须是 16 的倍数
+        if total_space % 16 != 0 {
+            total_space += 8; // 补齐到 16 字节
+        }
+    
+        // 4. 执行分配
+        self.backend.add_imm(VReg::StackPtr, -(total_space as i32));
+    
+        // 5. (此处省略) 将超出的参数 mov 到 [rsp + offset] 的逻辑
+    
+        // 6. 真正的调用
+        self.backend.call_reg(target_reg);
+    
+        // 7. 平栈
+        self.backend.add_imm(VReg::StackPtr, total_space as i32);
+    }
+
     pub fn push_vreg(&mut self, r: VReg)            { self.backend.push_vreg(r) }
     pub fn pop_vreg(&mut self, r: VReg)             { self.backend.pop_vreg(r) }
 
     // ── 便捷组合操作 ─────────────────────────────────────────
+
+    /// 手动在栈上分配空间 (sub rsp, bytes)
+    pub fn stack_alloc(&mut self, bytes: i32) {
+        // 保持 16 字节对齐是工业级 JIT 的基本修养
+        let aligned = (bytes + 15) & !15;
+        self.backend.sub_imm(VReg::StackPtr, aligned);
+    }
+
+    /// 手动释放栈空间 (add rsp, bytes)
+    pub fn stack_free(&mut self, bytes: i32) {
+        let aligned = (bytes + 15) & !15;
+        self.backend.add_imm(VReg::StackPtr, aligned);
+    }
+
+    /// 将 RSP 的当前值拷贝到另一个寄存器（用于建立伪帧或访问局部变量）
+    pub fn mov_sp_to(&mut self, dst: VReg) {
+        self.backend.mov(dst, VReg::StackPtr);
+    }
 
     /// inc dst  (dst += 1)
     pub fn inc(&mut self, dst: VReg) {

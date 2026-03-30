@@ -12,6 +12,7 @@ use crate::util::hexdump::hex_disassemble;
 pub mod quicksort;
 pub mod bubble_sort;
 pub mod fib;
+pub mod jit_call;
 
 pub use quicksort::build_quicksort;
 pub use bubble_sort::build_bubblesort;

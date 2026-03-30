@@ -46,6 +46,7 @@ fn vreg_to_reg(v: VReg) -> Reg64 {
         VReg::Tmp(3) => rdi,
         VReg::Cnt    => r12,   // callee-saved → 由 prologue/epilogue 保护
         VReg::Ptr    => rcx,   // 与 Arg(0) 相同：ptr 参数通过 rcx 传入
+        VReg::StackPtr => rsp,
         _ => panic!("unsupported VReg {:?}", v),
     }
 }
@@ -64,6 +65,7 @@ fn vreg_to_reg(v: VReg) -> Reg64 {
         VReg::Tmp(3) => r8,
         VReg::Cnt    => rcx,   // SysV: rcx 不是参数寄存器（参数用 rdi/rsi/rdx）
         VReg::Ptr    => rdi,   // 与 Arg(0) 相同
+        VReg::StackPtr => rsp,
         _ => panic!("unsupported VReg {:?}", v),
     }
 }
@@ -231,6 +233,10 @@ impl MacroAssemblerBackend for X64Backend {
 
     fn call_label(&mut self, label: &Label) {
         self.asm.call_label(label);
+    }
+
+    fn call_reg(&mut self, reg: VReg) {
+        self.asm.call_r64(self.r(reg));
     }
 
     fn push_vreg(&mut self, r: VReg) {
