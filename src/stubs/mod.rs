@@ -161,3 +161,65 @@ pub fn build_const_add() -> JitFn<unsafe extern "C" fn(i64) -> i64> {
 pub fn build_const_add() -> JitFn<unsafe extern "C" fn(i32) -> i32> {
     compile_stub::<NativeBackend, _, _>(emit_const_add)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sum_array() {
+        println!("[*] Testing JIT sum_array ...");
+        let jit_sum = build_sum_array();
+        
+        let data: Vec<i64> = vec![10, 20, 30, 40, 50];
+        let expected: i64 = data.iter().sum();
+        
+        unsafe {
+            let result = (jit_sum.get())(data.as_ptr(), data.len() as i64);
+            assert_eq!(result, expected, "sum_array result mismatch!");
+        }
+        println!("  [✓] sum([10..50]) = {}", expected);
+    }
+
+    #[test]
+    fn test_factorial() {
+        println!("[*] Testing JIT factorial ...");
+        let jit_fact = build_factorial();
+        
+        let test_cases = [
+            (0, 1), (1, 1), (5, 120), (10, 3628800)
+        ];
+
+        for (input, expected) in test_cases {
+            unsafe {
+                let result = (jit_fact.get())(input);
+                assert_eq!(result, expected, "factorial({}) failed!", input);
+            }
+        }
+        println!("  [✓] 0!, 1!, 5!, 10! are all correct.");
+    }
+
+    #[test]
+    fn test_const_add() {
+        println!("[*] Testing JIT const_add (loop based) ...");
+        let jit_add = build_const_add();
+        
+        let input = 100;
+        let expected = 110; // 100 + 10 iterations of inc
+        
+        unsafe {
+            let result = (jit_add.get())(input);
+            assert_eq!(result, expected, "const_add failed!");
+        }
+        println!("  [✓] 100 + 10 = {}", expected);
+    }
+
+    #[test]
+    fn test_comprehensive_hexdump() {
+        // 打印字节码以验证跨平台生成的差异性
+        println!("\n[!] Architecture: {:?}", std::env::consts::ARCH);
+        
+        // 这种方式需要你之前修复的 into_bytes 或类似的 view_code 逻辑
+        println!("sum_array code size: {} bytes", build_sum_array().code_size());
+    }
+}

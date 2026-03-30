@@ -4,7 +4,7 @@
 
 use jit_assembler::{
     arch::Arch,
-    stubs::{bubble_sort, build_bubblesort, build_const_add, build_factorial, build_quicksort, build_sum_array},
+    stubs::{build_const_add, build_factorial, build_sum_array},
     util::hexdump,
 };
 
