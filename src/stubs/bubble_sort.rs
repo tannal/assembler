@@ -148,3 +148,57 @@ pub fn build_bubblesort() -> JitFn<unsafe extern "C" fn(*mut isize, isize)> {
 
     unsafe { m.compile() }
 }
+
+#[test]
+fn test_jit_bubblesort() {
+    println!("\n[*] Testing JIT BubbleSort ...");
+    let jit_bs = build_bubblesort();
+    println!("    Entry: {:p}  Size: {} bytes", jit_bs.entry_addr(), jit_bs.code_size());
+
+    // 封装调用逻辑
+    let sort = |arr: &mut Vec<isize>| {
+        let n = arr.len() as isize;
+        if n > 1 {
+            unsafe { 
+                // 注意：冒泡排序通常传入 (指针, 长度)
+                (jit_bs.get())(arr.as_mut_ptr(), n) 
+            };
+        }
+    };
+
+    // 辅助函数：检查是否有序
+    let is_sorted = |arr: &[isize]| arr.windows(2).all(|w| w[0] <= w[1]);
+
+    // --- 测试用例 1: 空数组 ---
+    let mut a1: Vec<isize> = vec![];
+    sort(&mut a1);
+    assert!(is_sorted(&a1));
+    println!("  [✓] Empty array      -> {:?}", a1);
+
+    // --- 测试用例 2: 单个元素 ---
+    let mut a2 = vec![42];
+    sort(&mut a2);
+    assert!(is_sorted(&a2));
+    println!("  [✓] Single element   -> {:?}", a2);
+
+    // --- 测试用例 3: 逆序数组 (最差情况) ---
+    let mut a3 = vec![5, 4, 3, 2, 1];
+    sort(&mut a3);
+    assert!(is_sorted(&a3));
+    println!("  [✓] Reverse sorted   -> {:?}", a3);
+
+    // --- 测试用例 4: 包含重复项的乱序数组 ---
+    let mut a4 = vec![3, 1, 4, 1, 5, 9, 2, 6, 5];
+    sort(&mut a4);
+    assert!(is_sorted(&a4));
+    println!("  [✓] Random w/ dups   -> {:?}", a4);
+
+    // --- 测试用例 5: 大规模随机测试 ---
+    use std::time::Instant;
+    let mut a5: Vec<isize> = (0..1000).rev().collect(); // 1000 到 0
+    let now = Instant::now();
+    sort(&mut a5);
+    let elapsed = now.elapsed();
+    assert!(is_sorted(&a5));
+    println!("  [✓] 1000 items (rev) -> Sorted in {:?}", elapsed);
+}

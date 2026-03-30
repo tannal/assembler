@@ -23,8 +23,6 @@
 //  注：Cnt 在 Win64 上使用 r12（callee-saved），需要 prologue 保存/恢复。
 // ============================================================
 
-use std::any::Any;
-
 use crate::arch::{Arch, ArchAssembler, Label};
 use crate::arch::x64::{reg::*, Reg64, X64Assembler};
 use crate::runtime::JitFn;

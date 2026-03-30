@@ -166,3 +166,64 @@ pub fn build_quicksort() -> JitFn<unsafe extern "C" fn(*mut isize, isize, isize)
 
     unsafe { m.compile() }
 }
+#[test]
+fn test_jit_quicksort() {
+    println!("\n[*] Testing JIT Quicksort (Cross-Platform Stub) ...");
+    
+    // 1. 构建 JIT 函数
+    let jit_qs = build_quicksort();
+    println!("    Entry: {:p}  Size: {} bytes", jit_qs.entry_addr(), jit_qs.code_size());
+
+    // 2. 封装调用闭包，处理参数对齐
+    // 签名: fn(ptr, low, high)
+    let sort = |arr: &mut Vec<isize>| {
+        let n = arr.len() as isize;
+        if n > 1 {
+            unsafe {
+                (jit_qs.get())(arr.as_mut_ptr(), 0, n - 1)
+            };
+        }
+    };
+
+    // 3. 辅助工具：检查有序性
+    let is_sorted = |arr: &[isize]| arr.windows(2).all(|w| w[0] <= w[1]);
+
+    // --- 测试用例 1: 基础乱序 ---
+    let mut a1 = vec![3, 1, 4, 1, 5, 9, 2, 6, 5];
+    sort(&mut a1);
+    assert!(is_sorted(&a1), "Basic sort failed: {:?}", a1);
+    println!("  [✓] Random w/ Duplicates -> {:?}", a1);
+
+    // --- 测试用例 2: 边界检查（空与单元素） ---
+    let mut a2_empty: Vec<isize> = vec![];
+    let mut a2_single = vec![42];
+    sort(&mut a2_empty);
+    sort(&mut a2_single);
+    assert!(is_sorted(&a2_empty));
+    assert!(is_sorted(&a2_single));
+    println!("  [✓] Empty & Single Element checked.");
+
+    // --- 测试用例 3: 逆序数组（Lomuto 最差情况，测试栈深） ---
+    let mut a3 = vec![10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+    sort(&mut a3);
+    assert!(is_sorted(&a3));
+    println!("  [✓] Reverse Sorted -> {:?}", a3);
+
+    // --- 测试用例 4: 已排序数组 ---
+    let mut a4 = vec![1, 2, 3, 4, 5];
+    sort(&mut a4);
+    assert!(is_sorted(&a4));
+    println!("  [✓] Already Sorted checked.");
+
+    // --- 测试用例 5: 随机压力测试 ---
+    use std::time::Instant;
+    let size = 1000;
+    let mut a5: Vec<isize> = (0..size).rev().collect(); // 构造大逆序
+    
+    let now = Instant::now();
+    sort(&mut a5);
+    let elapsed = now.elapsed();
+    
+    assert!(is_sorted(&a5));
+    println!("  [✓] {} elements sorted in {:?}", size, elapsed);
+}
