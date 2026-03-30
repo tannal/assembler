@@ -14,6 +14,7 @@ pub mod bubble_sort;
 pub mod fib;
 pub mod jit_call;
 pub mod jit_call_c;
+pub mod jit_call_eight_arguments;
 
 pub use quicksort::build_quicksort;
 pub use bubble_sort::build_bubblesort;

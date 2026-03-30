@@ -80,6 +80,12 @@ impl X64Assembler {
     #[inline] fn emit1(&mut self, b: u8)      { self.buf.push(b); }
     #[inline] fn emit2(&mut self, a: u8, b: u8) { self.buf.push(a); self.buf.push(b); }
 
+    /// 将字节数组直接写入缓冲区
+    #[inline]
+    pub fn emit_array(&mut self, bytes: &[u8]) {
+        self.buf.extend_from_slice(bytes);
+    }
+
     #[inline]
     fn emit_i32(&mut self, v: i32) {
         self.buf.extend_from_slice(&v.to_le_bytes());
@@ -337,6 +343,45 @@ impl X64Assembler {
         self.emit1((src.0 & 7) << 3 | 0x04);
         // SIB: scale=3(×8) index=idx&7 base=base&7
         self.emit1((3 << 6) | ((idx.0 & 7) << 3) | (base.0 & 7));
+    }
+    
+    pub fn store_mem(&mut self, base: Reg64, offset: i64, src: Reg64) {
+
+        // 指令格式: MOV r/m64, r64 (Opcode 0x89)
+        // REX 颜色处理 (处理 R8-R15)
+        let mut rex = 0x48; // 基础 REX.W (64-bit)
+        if src.0 > 7 { rex |= 0x04; } // REX.R
+        if base.0 > 7 { rex |= 0x01; } // REX.B
+        self.emit1(rex);
+
+        self.emit1(0x89);
+
+        let src_enc = (src.0 & 7) << 3;
+        let base_enc = base.0 & 7;
+
+        if offset == 0 && base_enc != 5 && base_enc != 4 {
+            // [reg] 模式 (注意: RBP 和 RSP 有特殊处理，这里简化处理)
+            self.emit1(0x00 | src_enc | base_enc);
+        } else if offset >= -128 && offset <= 127 {
+            // [reg + disp8] 模式
+            // 特殊情况：如果基址是 RSP (4)，必须发射 SIB 字节
+            if base_enc == 4 {
+                self.emit1(0x40 | src_enc | 0x04);
+                self.emit1(0x24); // SIB: [rsp]
+            } else {
+                self.emit1(0x40 | src_enc | base_enc);
+            }
+            self.emit1(offset as u8);
+        } else {
+            // [reg + disp32] 模式
+            if base_enc == 4 {
+                self.emit1(0x80 | src_enc | 0x04);
+                self.emit1(0x24);
+            } else {
+                self.emit1(0x80 | src_enc | base_enc);
+            }
+            self.emit_array(&offset.to_le_bytes());
+        }
     }
 
     // ── 跳转 ─────────────────────────────────────────────────

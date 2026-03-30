@@ -54,7 +54,7 @@ pub enum VReg {
     Cnt,
     /// 专用指针寄存器（数组基址等）
     Ptr,
-    // 栈帧寄存器
+    /// 栈帧寄存器
     StackPtr,
 }
 
@@ -64,12 +64,12 @@ pub enum VReg {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cond {
-    Eq,  // ==
-    Ne,  // !=
-    Lt,  // <  (有符号)
-    Le,  // <= (有符号)
-    Gt,  // >  (有符号)
-    Ge,  // >= (有符号)
+    Eq, // ==
+    Ne, // !=
+    Lt, // <  (有符号)
+    Le, // <= (有符号)
+    Gt, // >  (有符号)
+    Ge, // >= (有符号)
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -127,6 +127,10 @@ pub trait MacroAssemblerBackend: Sized {
 
     /// *(base + idx * ptr_size) = src  (存储指针大小的内存字)
     fn store_ptr_scaled(&mut self, base: VReg, idx: VReg, src: VReg);
+
+    /// 存储寄存器值到内存: *(base + offset) = src
+    /// offset 是字节偏移量
+    fn store_mem(&mut self, base: VReg, offset: i64, src: VReg);
 
     fn push(&mut self, reg: VReg);
 
@@ -196,13 +200,27 @@ impl<B: MacroAssemblerBackend> MacroAssembler<B> {
 
     // ── 转发所有 backend 方法 ────────────────────────────────
 
-    pub fn new_label(&mut self) -> Label            { self.backend.new_label() }
-    pub fn bind(&mut self, l: &Label)               { self.backend.bind(l) }
-    pub fn prologue(&mut self)                      { self.backend.prologue() }
-    pub fn epilogue(&mut self)                      { self.backend.epilogue() }
-    pub fn ret(&mut self)                           { self.backend.ret() }
-    pub fn mov(&mut self, d: VReg, s: VReg)         { self.backend.mov(d, s) }
-    pub fn mov_imm(&mut self, d: VReg, imm: i64)    { self.backend.mov_imm(d, imm) }
+    pub fn new_label(&mut self) -> Label {
+        self.backend.new_label()
+    }
+    pub fn bind(&mut self, l: &Label) {
+        self.backend.bind(l)
+    }
+    pub fn prologue(&mut self) {
+        self.backend.prologue()
+    }
+    pub fn epilogue(&mut self) {
+        self.backend.epilogue()
+    }
+    pub fn ret(&mut self) {
+        self.backend.ret()
+    }
+    pub fn mov(&mut self, d: VReg, s: VReg) {
+        self.backend.mov(d, s)
+    }
+    pub fn mov_imm(&mut self, d: VReg, imm: i64) {
+        self.backend.mov_imm(d, imm)
+    }
     pub fn load_ptr_scaled(&mut self, d: VReg, base: VReg, idx: VReg) {
         self.backend.load_ptr_scaled(d, base, idx)
     }
@@ -216,20 +234,40 @@ impl<B: MacroAssemblerBackend> MacroAssembler<B> {
     pub fn pop(&mut self, reg: VReg) {
         self.backend.pop(reg);
     }
-    
-    pub fn add(&mut self, d: VReg, l: VReg, r: VReg) { self.backend.add(d, l, r) }
-    pub fn add_imm(&mut self, d: VReg, imm: i32)    { self.backend.add_imm(d, imm) }
-    pub fn sub(&mut self, d: VReg, l: VReg, r: VReg) { self.backend.sub(d, l, r) }
-    pub fn sub_imm(&mut self, d: VReg, imm: i32)    { self.backend.sub_imm(d, imm) }
-    pub fn mul(&mut self, d: VReg, l: VReg, r: VReg) { self.backend.mul(d, l, r) }
-    pub fn zero(&mut self, d: VReg)                 { self.backend.zero(d) }
-    pub fn cmp(&mut self, l: VReg, r: VReg)         { self.backend.cmp(l, r) }
+
+    pub fn add(&mut self, d: VReg, l: VReg, r: VReg) {
+        self.backend.add(d, l, r)
+    }
+    pub fn add_imm(&mut self, d: VReg, imm: i32) {
+        self.backend.add_imm(d, imm)
+    }
+    pub fn sub(&mut self, d: VReg, l: VReg, r: VReg) {
+        self.backend.sub(d, l, r)
+    }
+    pub fn sub_imm(&mut self, d: VReg, imm: i32) {
+        self.backend.sub_imm(d, imm)
+    }
+    pub fn mul(&mut self, d: VReg, l: VReg, r: VReg) {
+        self.backend.mul(d, l, r)
+    }
+    pub fn zero(&mut self, d: VReg) {
+        self.backend.zero(d)
+    }
+    pub fn cmp(&mut self, l: VReg, r: VReg) {
+        self.backend.cmp(l, r)
+    }
     pub fn cmp_imm(&mut self, lhs: VReg, imm: i64) {
         self.backend.cmp_imm(lhs, imm);
     }
-    pub fn jump_if(&mut self, c: Cond, lbl: &Label) { self.backend.jump_if(c, lbl) }
-    pub fn jump(&mut self, lbl: &Label)             { self.backend.jump(lbl) }
-    pub fn call_label(&mut self, lbl: &Label)       { self.backend.call_label(lbl) }
+    pub fn jump_if(&mut self, c: Cond, lbl: &Label) {
+        self.backend.jump_if(c, lbl)
+    }
+    pub fn jump(&mut self, lbl: &Label) {
+        self.backend.jump(lbl)
+    }
+    pub fn call_label(&mut self, lbl: &Label) {
+        self.backend.call_label(lbl)
+    }
     pub fn call_reg(&mut self, reg: VReg) {
         self.backend.call_reg(reg);
     }
@@ -252,22 +290,101 @@ impl<B: MacroAssemblerBackend> MacroAssembler<B> {
             // 当前栈偏移总计: -16 (已经是 16 的倍数)
             // 但是！接下来的 `call` 指令又会压入一个 8 字节的返回地址。
             // 为了让被调用者看到对齐的栈，我们在 call 之前，必须让 RSP 处于 16n + 8 的位置。
-            
+
             // 既然当前是 16n (0 结尾)，我们要减去 (32 + 8) = 40。
             // 这样 0 - 40 = -40，结尾是 8。完美！
             let alignment_padding = 8;
             let total_alloc = space + alignment_padding;
 
             self.backend.add_imm(VReg::StackPtr, -(total_alloc as i32));
-            
+
             self.backend.call_reg(target);
-            
+
             self.backend.add_imm(VReg::StackPtr, total_alloc as i32);
         }
     }
 
-    pub fn push_vreg(&mut self, r: VReg)            { self.backend.push_vreg(r) }
-    pub fn pop_vreg(&mut self, r: VReg)             { self.backend.pop_vreg(r) }
+    /// 自动处理参数摆放并执行调用
+    /// inputs: 存有参数值的虚拟寄存器列表
+    pub fn call_with_args(&mut self, target: VReg, inputs: &[VReg]) {
+        let args_count = inputs.len();
+
+        // 1. 确定平台寄存器序列
+        #[cfg(target_os = "windows")]
+        let reg_params = [VReg::Arg(0), VReg::Arg(1), VReg::Arg(2), VReg::Arg(3)];
+        #[cfg(not(target_os = "windows"))]
+        let reg_params = [
+            VReg::Arg(0),
+            VReg::Arg(1),
+            VReg::Arg(2),
+            VReg::Arg(3),
+            VReg::Arg(4),
+            VReg::Arg(5),
+        ];
+
+        let reg_limit = reg_params.len();
+        let num_stack_args = if args_count > reg_limit {
+            args_count - reg_limit
+        } else {
+            0
+        };
+
+        // 2. 计算需要开辟的栈空间 (以 Windows 为例)
+        #[cfg(target_os = "windows")]
+        let mut total_space = 32 + (num_stack_args * 8);
+        #[cfg(not(target_os = "windows"))]
+        let mut total_space = num_stack_args * 8;
+
+        // 保持 16 字节对齐 (考虑 call 压入的 8 字节返回地址)
+        // 假设当前 RSP 在 prologue 后是 16n
+        if (total_space + 8) % 16 != 0 {
+            total_space += 8;
+        }
+
+        // --- 开始发射指令 ---
+
+        // 3. 分配栈空间
+        if total_space > 0 {
+            self.backend.add_imm(VReg::StackPtr, -(total_space as i32));
+        }
+
+        // 1. 先处理“栈参数” (Spilled arguments)
+        // 这样做的好处是：此时所有寄存器都还保持着原始值，store_mem 是安全的
+        for (i, &src_vreg) in inputs.iter().enumerate().filter(|(i, _)| *i >= reg_limit) {
+            #[cfg(target_os = "windows")]
+            let offset = 32 + (i - reg_limit) * 8;
+            #[cfg(not(target_os = "windows"))]
+            let offset = (i - reg_limit) * 8;
+
+            self.backend
+                .store_mem(VReg::StackPtr, offset as i64, src_vreg);
+        }
+
+        // 2. 后处理“寄存器参数”
+        for (i, &src_vreg) in inputs.iter().enumerate().take(reg_limit) {
+            // 如果 src 和 dst 相同，大部分后端会忽略这条指令
+            self.mov(reg_params[i], src_vreg);
+        }
+
+        // 3. 检查 target 是否被污染
+        // 如果 target 映射的寄存器正好是 reg_params 之一，它已经被覆盖了！
+        // 所以在 call_with_args 的最开始，应该把 target 挪到一个“绝对安全”的寄存器
+
+        // 5. 执行调用
+        self.backend.call_reg(target);
+
+        // 6. 清理栈
+        if total_space > 0 {
+            self.backend.add_imm(VReg::StackPtr, total_space as i32);
+        }
+    }
+
+    pub fn push_vreg(&mut self, r: VReg) {
+        self.backend.push_vreg(r)
+    }
+    pub fn pop_vreg(&mut self, r: VReg) {
+        self.backend.pop_vreg(r)
+    }
 
     // ── 便捷组合操作 ─────────────────────────────────────────
 

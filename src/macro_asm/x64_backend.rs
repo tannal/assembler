@@ -35,18 +35,25 @@ use super::backend::{Cond, MacroAssemblerBackend, VReg};
 #[cfg(target_os = "windows")]
 fn vreg_to_reg(v: VReg) -> Reg64 {
     match v {
+        VReg::Ret    => rax,
+        VReg::StackPtr => rsp,
         VReg::Arg(0) => rcx,
         VReg::Arg(1) => rdx,
         VReg::Arg(2) => r8,
         VReg::Arg(3) => r9,
-        VReg::Ret    => rax,
-        VReg::Tmp(0) => r10,
-        VReg::Tmp(1) => r11,
-        VReg::Tmp(2) => rsi,   // Win64: rsi is callee-saved, but safe as scratch here
-        VReg::Tmp(3) => rdi,
-        VReg::Cnt    => r12,   // callee-saved → 由 prologue/epilogue 保护
-        VReg::Ptr    => rcx,   // 与 Arg(0) 相同：ptr 参数通过 rcx 传入
-        VReg::StackPtr => rsp,
+        
+        // --- 扩充 Tmp 池 ---
+        VReg::Tmp(0) => r10, // Caller-saved
+        VReg::Tmp(1) => r11, // Caller-saved
+        VReg::Tmp(2) => r12, // 注意：R12-R15 是 Callee-saved
+        VReg::Tmp(3) => r13,
+        VReg::Tmp(4) => r14, 
+        VReg::Tmp(5) => r15,
+        VReg::Tmp(6) => rsi, // Callee-saved
+        VReg::Tmp(7) => rdi, // Callee-saved
+        
+        VReg::Cnt    => rax, // 通常 Cnt 可以复用 Ret 或任意寄存器
+        VReg::Ptr    => r10, // 建议 Ptr 不要和 Arg(0) 冲突，除非你确定逻辑顺序
         _ => panic!("unsupported VReg {:?}", v),
     }
 }
@@ -255,5 +262,11 @@ impl MacroAssemblerBackend for X64Backend {
     fn pop(&mut self, reg: VReg) {
         let reg = self.r(reg);
         self.asm.pop_r64(reg);
+    }
+    
+    fn store_mem(&mut self, base: VReg, offset: i64, src: VReg) {
+        let base = self.r(base);
+        let src = self.r(src);
+        self.asm.store_mem(base, offset, src);
     }
 }

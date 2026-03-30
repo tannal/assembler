@@ -206,4 +206,8 @@ impl MacroAssemblerBackend for ArmBackend {
     fn call_reg(&mut self, reg: VReg) {
         todo!()
     }
+    
+    fn store_mem(&mut self, base: VReg, offset: i64, src: VReg) {
+        todo!()
+    }
 }
