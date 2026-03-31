@@ -11,3 +11,9 @@ libc = "0.2"
 [[bin]]
 name = "demo"
 path = "src/main.rs"
+
+[dependencies]
+capstone = "0.14.0"
+cranelift = "0.130.0"
+cranelift-jit = "0.130.0"
+cranelift-module = "0.130.0"

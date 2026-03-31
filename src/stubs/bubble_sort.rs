@@ -49,99 +49,78 @@ pub fn build_bubblesort() -> JitFn<unsafe extern "C" fn(*mut isize, isize)> {
 
     m.bind(&entry);
 
-    // ── 边界检查：if len <= 1 → return ───────────────────────
+    // 1. 边界检查
     m.mov_imm(Tmp(0), 1);
     m.cmp(Arg(1), Tmp(0));
     m.jump_if(Cond::Le, &done);
 
-    // ── 建帧 + 保存跨循环寄存器 ──────────────────────────────
     m.prologue();
-    m.push_vreg(Arg(0));   // ptr
-    m.push_vreg(Arg(1));   // len
 
-    // ── 外层初始化：i = 0 ────────────────────────────────────
-    m.mov_imm(Tmp(0), 0);  // i = 0
+    // 2. 初始化外层计数器 i = 0 (Tmp0)
+    m.mov_imm(Tmp(0), 0);
 
     // ─────────────────────────────────────────────────────────
-    // 外层循环  for i in 0 .. len-1
+    m.bind(&outer_top); // 外层循环开始
     // ─────────────────────────────────────────────────────────
-    m.bind(&outer_top);
 
-    //  if i >= len - 1 → exit
+    // if i >= len - 1 -> 结束
     m.mov(Tmp(2), Arg(1));
-    m.dec(Tmp(2));                      // Tmp(2) = len - 1
+    m.dec(Tmp(2));           // Tmp2 = len - 1
     m.cmp(Tmp(0), Tmp(2));
     m.jump_if(Cond::Ge, &outer_exit);
 
-    //  inner_end = len - i - 1  （内层 j 的上界，j < inner_end）
-    m.mov(Tmp(2), Arg(1));
-    m.sub(Tmp(2), Tmp(2),Tmp(0));              // Tmp(2) = len - i
-    m.dec(Tmp(2));                      // Tmp(2) = len - i - 1
+    // 每次进入外层循环，必须重置 swapped = 0
+    m.mov_imm(Tmp(3), 0);    // Tmp3 = swapped
 
-    //  swapped = 0
-    m.mov_imm(Tmp(3), 0);
+    // 计算内层上限：inner_limit = len - 1 - i
+    m.sub(Tmp(2), Tmp(2), Tmp(0)); 
 
-    //  j = 0
+    // 初始化内层计数器 j = 0 (Tmp1)
     m.mov_imm(Tmp(1), 0);
 
     // ─────────────────────────────────────────────────────────
-    // 内层循环  for j in 0 .. inner_end
+    m.bind(&inner_top); // 内层循环开始
     // ─────────────────────────────────────────────────────────
-    m.bind(&inner_top);
 
-    //  if j >= inner_end → exit inner
+    // if j >= inner_limit -> 结束内层
     m.cmp(Tmp(1), Tmp(2));
     m.jump_if(Cond::Ge, &inner_exit);
 
-    //  a = arr[j]
-    m.load_ptr_scaled(Ret, Arg(0), Tmp(1));
+    // 加载 a = arr[j], b = arr[j+1]
+    m.load_ptr_scaled(Ret, Arg(0), Tmp(1)); // Ret = arr[j]
+    
+    m.mov(Tmp(4), Tmp(1));
+    m.inc(Tmp(4));                          // Tmp4 = j + 1
+    m.load_ptr_scaled(Cnt, Arg(0), Tmp(4)); // Cnt = arr[j+1]
 
-    //  b = arr[j+1]
-    m.mov(Cnt, Tmp(1));
-    m.inc(Cnt);                         // Cnt = j + 1
-    m.load_ptr_scaled(Cnt, Arg(0), Cnt);
-
-    //  if a <= b → no_swap
+    // if a <= b -> 不交换
     m.cmp(Ret, Cnt);
     m.jump_if(Cond::Le, &no_swap);
 
-    //  swap: arr[j] = b,  arr[j+1] = a
-    m.store_ptr_scaled(Arg(0), Tmp(1), Cnt); // arr[j]   = b
+    // 交换：arr[j] = b, arr[j+1] = a
+    m.store_ptr_scaled(Arg(0), Tmp(1), Cnt);
+    m.store_ptr_scaled(Arg(0), Tmp(4), Ret);
 
-    m.mov(Cnt, Tmp(1));
-    m.inc(Cnt);                              // Cnt = j + 1（重算，Cnt 被 store 覆盖）
-    m.store_ptr_scaled(Arg(0), Cnt, Ret);    // arr[j+1] = a
-
-    //  swapped = 1
+    // 标记已交换
     m.mov_imm(Tmp(3), 1);
 
     m.bind(&no_swap);
-
-    //  j++
-    m.inc(Tmp(1));
+    m.inc(Tmp(1));        // j++
     m.jump(&inner_top);
 
     // ─────────────────────────────────────────────────────────
-    // 内层退出
-    // ─────────────────────────────────────────────────────────
     m.bind(&inner_exit);
+    // ─────────────────────────────────────────────────────────
 
-    //  early-exit：if swapped == 0 → outer_exit
+    // 检查 swapped。如果为 0，说明这一趟没发生交换，全序已成。
     m.cmp_imm(Tmp(3), 0);
     m.jump_if(Cond::Eq, &outer_exit);
 
-    //  i++，继续外层
-    m.inc(Tmp(0));
+    m.inc(Tmp(0));        // i++
     m.jump(&outer_top);
 
     // ─────────────────────────────────────────────────────────
-    // 外层退出 / 清理
-    // ─────────────────────────────────────────────────────────
     m.bind(&outer_exit);
-
-    m.pop_vreg(Arg(1));   // 平栈：len
-    m.pop_vreg(Arg(0));   // 平栈：ptr
-
     m.epilogue();
 
     m.bind(&done);

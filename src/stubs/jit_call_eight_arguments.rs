@@ -44,7 +44,7 @@ fn test_call_with_8_arguments() {
         m.mov_imm(vreg, (i + 1) as i64);
     }
 
-    // 2. 最后加载函数地址到 Ptr (r10)
+    // 2. 最后加载函数地址到 Cnt
     let target_reg = VReg::Cnt;
     m.mov_imm(target_reg, callee_addr);
 
